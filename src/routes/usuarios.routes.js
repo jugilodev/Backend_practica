@@ -9,6 +9,7 @@ import { isAdmin } from '../middleware/validateAdmin.middleware.js'
 const router = Router()
 
 router.post('/', authMiddleware, isAdmin, validate(createUserSchema), createUsuarios)
+//router.post('/', createUsuarios)
 router.get('/', authMiddleware, getUsuarios)
 
 
