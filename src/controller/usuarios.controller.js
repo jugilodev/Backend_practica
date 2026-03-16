@@ -6,9 +6,11 @@ import { logger } from '../utils/loggers.js'
 
 export const createUsuarios = async (req, res) => {
     const { nombre, email, celular, password } = req.body
+    logger.info(`Creando usuario con email: ${email} y celular: ${celular}`)
     try {
         const result = await findUserByEmail(email, celular)
-        logger.info(result)
+        logger.info("Resultado de la busqueda de usuario: ", result)
+        logger.info(`Cantidad de usuarios encontrados: ${result.length}`)
         if (result.length > 0) {
 
             logger.warn(`Usuaario ya existente con ${email} o ${celular}`)
@@ -16,13 +18,17 @@ export const createUsuarios = async (req, res) => {
                 message: "Ya existe un usuario con ese numero o email registrados"
             })
         }
+        logger.info("No se encontraron usuarios con ese email o celular, procediendo a crear el usuario")
         const hash = await createHash(password, 10)
+        logger.info("No se encontraron usuarios con ese email o celular, procediendo a crear el usuario")
         const user = await createUser(nombre, email, celular, hash)
+        logger.info(user)
         res.status(201).json({ user })
+        logger.info("No se encontraron usuarios con ese email o celular, procediendo a crear el usuario")
 
     } catch (err) {
 
-        logger.error(error, "Error al crear el usuario")
+        logger.error(err, "Error al crear el usuario")
         res.status(500).json({
             message: "Error al crear el usuario"
         })

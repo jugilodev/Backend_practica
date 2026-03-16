@@ -44,12 +44,12 @@ import { logger } from "../utils/loggers.js";
 //     return result.rows
 // }
 
-export const findUserByEmail = async (email, celular) => {
+export const findUserByEmail = async (correo, celular) => {
     const result = await pool.query(`
 
-            SELECT * FROM pqr.usuarios
-            WHERE celular = $1 OR email = $2
-            `, [celular, email])
+            SELECT * FROM public.usuarios
+            WHERE celular = $1 OR correo = $2
+            `, [celular, correo])
 
     return result.rows
 }
@@ -57,10 +57,10 @@ export const findUserByEmail = async (email, celular) => {
 export const createUser = async (nombre, email, celular, hash) => {
 
     const result = await pool.query(`
-        INSERT INTO pqr.usuarios(nombre, email, celular, password)
-                VALUES ($1,$2,$3, $4)
+        INSERT INTO public.usuarios(nombre, rol, area, activo, password_hash, correo, celular)
+                VALUES ($1,$2,$3, $4, $5, $6, $7)
                 RETURNING *
-        `, [nombre, email, celular, hash])
+        `, [nombre, "asesora", "atencion al cliente", true, hash, email, celular])
 
     return result.rows[0]
 }
@@ -68,10 +68,10 @@ export const createUser = async (nombre, email, celular, hash) => {
 export const allUser = async () => {
 
     const result = await pool.query(`
-        SELECT * FROM pqr.usuarios
+        SELECT * FROM public.usuarios
         `)
 
-    return result.rows[0]
+    return result.rows
 }
 
 export const emailUser = async (email) => {
@@ -79,9 +79,17 @@ export const emailUser = async (email) => {
     logger.info(`Buscando usuario con email: ${email}`)
 
     const result = await pool.query(`
-        SELECT * FROM pqr.usuarios
-        WHERE email = $1
+        SELECT * FROM public.usuarios
+        WHERE correo = $1
         `, [email])
     logger.info(result.rows)
     return result.rows
+}
+
+export const getUserById = async (id) => {
+    const result = await pool.query(
+        `SELECT id_usuario, nombre, rol, area, correo FROM public.usuarios WHERE id_usuario = $1`,
+        [id]
+    )
+    return result.rows[0]
 }
