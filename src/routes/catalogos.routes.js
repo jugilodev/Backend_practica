@@ -1,13 +1,16 @@
 import { Router } from 'express'
-import { listEstados, listTipoEvento, listTipoPeticion, listCanales } from '../controller/catalogos.controller.js'
+import { listEstados, listTipoEvento, listTipoPeticion, listCanales, listMunicipios } from '../controller/catalogos.controller.js'
 import { authMiddleware } from '../middleware/auth.middleware.js'
 
 const router = Router()
 
-// Todos los catálogos requieren autenticación
-router.get('/estados', authMiddleware, listEstados)
+// Catálogos protegidos (solo para usuarios internos)
+router.get('/estados',     authMiddleware, listEstados)
 router.get('/tipo_evento', authMiddleware, listTipoEvento)
-router.get('/tipo_peticion', authMiddleware, listTipoPeticion)
-router.get('/canales', authMiddleware, listCanales)
+
+// Catálogos públicos (necesarios para el formulario de radicación de PQRs)
+router.get('/tipo_peticion', listTipoPeticion)
+router.get('/canales',       listCanales)
+router.get('/municipios',    listMunicipios)
 
 export default router

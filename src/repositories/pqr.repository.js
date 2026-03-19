@@ -3,10 +3,13 @@ import { pool } from '../config/db.js'
 export const allPqr = async () => {
     const respuesta = await pool.query(`
 
-            select
+            SELECT
         p.radicado,
         p.fecha_reporte,
         p.fecha_evento,
+        p.vendedor_cedula,
+        p.vendedor_nombre,
+        p.vendedor_celular,
         c2.nombre,
         c2.apellido,
         c2.celular,
@@ -18,11 +21,11 @@ export const allPqr = async () => {
         e.tipo_estado,
         tp.tipo_peticion,
         c.tipo_canal
-    from public.pqr p
-    join public.estados e on e.id_estado = p.id_estado
-    join public.tipo_peticion tp on tp.id_tipo_peticion = p.id_tipo_peticion
-    join public.canal c on c.id_canal = p.id_canal
-    join public.cliente c2 on c2.id_cliente = p.id_cliente
+    FROM public.pqr p
+    JOIN public.estados e ON e.id_estado = p.id_estado
+    JOIN public.tipo_peticion tp ON tp.id_tipo_peticion = p.id_tipo_peticion
+    JOIN public.canal c ON c.id_canal = p.id_canal
+    JOIN public.cliente c2 ON c2.id_cliente = p.id_cliente
         
         `)
 
@@ -34,6 +37,7 @@ export const getPqrById = async (id_pqr) => {
     const result = await pool.query(`
         SELECT
             p.id_pqr, p.radicado, p.fecha_reporte, p.fecha_evento, p.descripcion, p.acepta_terminos,
+            p.vendedor_cedula, p.vendedor_nombre, p.vendedor_celular,
             e.id_estado, e.tipo_estado,
             tp.id_tipo_peticion, tp.tipo_peticion,
             c.id_canal, c.tipo_canal,
@@ -68,7 +72,8 @@ export const getBitacoraByPqr = async (id_pqr) => {
     return result.rows
 }
 
-// Actualiza el estado de una PQR e inserta automáticamente una entrada en la bitácora
+// Actualiza el estado de una PQR e inserta automáticamente una entrada en la bitácora.
+// id_tipo_evento es opcional: si no se provee, se usa el primer tipo_evento activo disponible.
 export const updateEstadoPqr = async (id_pqr, id_estado, id_usuario, id_tipo_evento, descripcion) => {
     // Obtener estado actual para registrar como estado_anterior
     const estadoActualRes = await pool.query(`
@@ -85,15 +90,70 @@ export const updateEstadoPqr = async (id_pqr, id_estado, id_usuario, id_tipo_eve
     const estadoNuevoRes = await pool.query(`SELECT tipo_estado FROM public.estados WHERE id_estado = $1`, [id_estado])
     const estadoNuevo = estadoNuevoRes.rows[0]?.tipo_estado || ""
 
+    // Si no se proporcionó tipo_evento, usar el primero disponible como fallback
+    let tipoEvento = id_tipo_evento
+    if (!tipoEvento) {
+        const fallback = await pool.query(`SELECT id_tipo_evento FROM public.tipo_evento WHERE activo = true ORDER BY id_tipo_evento LIMIT 1`)
+        tipoEvento = fallback.rows[0]?.id_tipo_evento
+    }
+
     // Insertar entrada en bitácora registrando el cambio
     await pool.query(`
         INSERT INTO public.pqr_bitacora (id_pqr, id_usuario, id_tipo_evento, descripcion, estado_anterior, estado_nuevo, fecha_evento)
         VALUES ($1, $2, $3, $4, $5, $6, NOW())
-    `, [id_pqr, id_usuario, id_tipo_evento,
+    `, [id_pqr, id_usuario, tipoEvento,
         descripcion || `Estado actualizado de "${estadoAnterior}" a "${estadoNuevo}"`,
         estadoAnterior, estadoNuevo])
 
     return { estadoAnterior, estadoNuevo }
+}
+
+// Busca un cliente por cédula; si no existe lo crea. Retorna el id_cliente.
+export const findOrCreateCliente = async ({ nombre, apellido, cedula, direccion, correo, celular }) => {
+    const existing = await pool.query(`SELECT id_cliente FROM public.cliente WHERE cedula = $1`, [cedula])
+    if (existing.rows.length > 0) return existing.rows[0].id_cliente
+
+    const inserted = await pool.query(`
+        INSERT INTO public.cliente (nombre, apellido, cedula, direccion, correo, celular)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id_cliente
+    `, [nombre, apellido, cedula, direccion, correo, celular])
+    return inserted.rows[0].id_cliente
+}
+
+// Genera el radicado con formato YYYYMM + secuencial de 3 dígitos dentro del mes.
+export const generarRadicado = async () => {
+    const now = new Date()
+    const yyyy = now.getFullYear()
+    const mm   = String(now.getMonth() + 1).padStart(2, "0")
+    const prefijo = `${yyyy}${mm}`
+
+    const res = await pool.query(
+        `SELECT COUNT(*) AS total FROM public.pqr WHERE radicado LIKE $1`,
+        [`${prefijo}%`]
+    )
+    const seq = parseInt(res.rows[0].total) + 1
+    return `${prefijo}${String(seq).padStart(3, "0")}`
+}
+
+// Crea una PQR nueva (endpoint público).
+export const createPqr = async ({ id_cliente, id_canal, id_tipo_peticion, id_municipio, fecha_reporte, fecha_evento, descripcion, acepta_terminos, radicado, vendedor_cedula, vendedor_nombre, vendedor_celular }) => {
+    // Usar el primer estado disponible (ej: "Abierto") como estado inicial
+    const estadoRes = await pool.query(`SELECT id_estado FROM public.estados ORDER BY id_estado LIMIT 1`)
+    const id_estado = estadoRes.rows[0]?.id_estado
+
+    const result = await pool.query(`
+        INSERT INTO public.pqr
+            (radicado, id_estado, id_tipo_peticion, id_canal, id_cliente, id_municipio,
+             fecha_reporte, fecha_evento, descripcion, acepta_terminos,
+             vendedor_cedula, vendedor_nombre, vendedor_celular)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING id_pqr, radicado
+    `, [radicado, id_estado, id_tipo_peticion, id_canal, id_cliente,
+        id_municipio || null, fecha_reporte, fecha_evento || null, descripcion, acepta_terminos,
+        vendedor_cedula || null, vendedor_nombre || null, vendedor_celular || null])
+
+    return result.rows[0]
 }
 
 // Agrega una entrada de bitácora (gestión manual: correos, llamadas, etc.)

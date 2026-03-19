@@ -23,3 +23,9 @@ export const getCanales = async () => {
     const result = await pool.query(`SELECT id_canal, tipo_canal FROM public.canal ORDER BY tipo_canal`)
     return result.rows
 }
+
+// Obtiene todos los municipios disponibles
+export const getMunicipios = async () => {
+    const result = await pool.query(`SELECT id_municipio, nombre FROM public.municipio ORDER BY nombre`)
+    return result.rows
+}
