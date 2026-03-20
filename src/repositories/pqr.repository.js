@@ -55,19 +55,63 @@ export const getPqrById = async (id_pqr) => {
     return result.rows[0]
 }
 
-// Obtiene todas las entradas de bitácora de una PQR
+// Obtiene todas las entradas de bitácora de una PQR, incluyendo archivos adjuntos
 export const getBitacoraByPqr = async (id_pqr) => {
     const result = await pool.query(`
         SELECT
             b.id_bitacora, b.descripcion, b.estado_anterior, b.estado_nuevo,
             b.fecha_evento, b.created_at,
             te.nombre AS tipo_evento,
-            u.nombre AS usuario_nombre, u.rol AS usuario_rol, u.area AS usuario_area
+            u.nombre AS usuario_nombre, u.rol AS usuario_rol, u.area AS usuario_area,
+            COALESCE(
+                JSON_AGG(
+                    JSON_BUILD_OBJECT(
+                        'id', a.id,
+                        'nombre_original', a.nombre_original,
+                        'ruta_archivo', a.ruta_archivo,
+                        'tipo_mime', a.tipo_mime
+                    )
+                ) FILTER (WHERE a.id IS NOT NULL),
+                '[]'::json
+            ) AS archivos
         FROM public.pqr_bitacora b
         JOIN public.tipo_evento te ON te.id_tipo_evento = b.id_tipo_evento
         JOIN public.usuarios u ON u.id_usuario = b.id_usuario
+        LEFT JOIN public.pqr_bitacora_archivos a ON a.id_bitacora = b.id_bitacora
         WHERE b.id_pqr = $1
+        GROUP BY b.id_bitacora, te.nombre, u.nombre, u.rol, u.area
         ORDER BY b.created_at DESC
+    `, [id_pqr])
+    return result.rows
+}
+
+// Guarda los archivos adjuntos de una entrada de bitácora
+export const addBitacoraArchivos = async (id_bitacora, archivos) => {
+    for (const archivo of archivos) {
+        await pool.query(`
+            INSERT INTO public.pqr_bitacora_archivos (id_bitacora, nombre_original, ruta_archivo, tipo_mime, tamanio_bytes)
+            VALUES ($1, $2, $3, $4, $5)
+        `, [id_bitacora, archivo.originalname, `/uploads/bitacora/${archivo.filename}`, archivo.mimetype, archivo.size])
+    }
+}
+
+// Guarda los archivos adjuntos de una PQR recién creada
+export const addPqrArchivos = async (id_pqr, archivos) => {
+    for (const archivo of archivos) {
+        await pool.query(`
+            INSERT INTO public.pqr_archivos (id_pqr, nombre_original, ruta_archivo, tipo_mime, tamanio_bytes)
+            VALUES ($1, $2, $3, $4, $5)
+        `, [id_pqr, archivo.originalname, `/uploads/pqr/${archivo.filename}`, archivo.mimetype, archivo.size])
+    }
+}
+
+// Obtiene los archivos adjuntos de una PQR
+export const getPqrArchivos = async (id_pqr) => {
+    const result = await pool.query(`
+        SELECT id, nombre_original, ruta_archivo, tipo_mime, tamanio_bytes, created_at
+        FROM public.pqr_archivos
+        WHERE id_pqr = $1
+        ORDER BY created_at ASC
     `, [id_pqr])
     return result.rows
 }

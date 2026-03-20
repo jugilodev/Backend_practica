@@ -1,4 +1,4 @@
-import { allPqr, getPqrById, getBitacoraByPqr, updateEstadoPqr, addBitacoraEntry, findOrCreateCliente, generarRadicado, createPqr } from "../repositories/pqr.repository.js"
+import { allPqr, getPqrById, getBitacoraByPqr, updateEstadoPqr, addBitacoraEntry, addBitacoraArchivos, addPqrArchivos, getPqrArchivos, findOrCreateCliente, generarRadicado, createPqr } from "../repositories/pqr.repository.js"
 
 // GET /api/pqr — Obtiene todas las PQRs con datos del cliente
 export const getPqr = async (req, res) => {
@@ -10,7 +10,7 @@ export const getPqr = async (req, res) => {
     }
 }
 
-// GET /api/pqr/:id — Obtiene una PQR específica con su bitácora
+// GET /api/pqr/:id — Obtiene una PQR específica con su bitácora y archivos adjuntos
 export const getPqrDetail = async (req, res) => {
     try {
         const { id } = req.params
@@ -18,8 +18,11 @@ export const getPqrDetail = async (req, res) => {
         if (!pqr) {
             return res.status(404).json({ message: "PQR no encontrada" })
         }
-        const bitacora = await getBitacoraByPqr(id)
-        return res.status(200).json({ ...pqr, bitacora })
+        const [bitacora, archivos] = await Promise.all([
+            getBitacoraByPqr(id),
+            getPqrArchivos(id),
+        ])
+        return res.status(200).json({ ...pqr, bitacora, archivos })
     } catch (err) {
         return res.status(500).json({ message: err.message || "Error al obtener la PQR" })
     }
@@ -83,13 +86,17 @@ export const createPqrPublic = async (req, res) => {
             vendedor_celular: celular_vendedor || null,
         })
 
+        if (req.files && req.files.length > 0) {
+            await addPqrArchivos(pqr.id_pqr, req.files)
+        }
+
         return res.status(201).json({ radicado: pqr.radicado, id_pqr: pqr.id_pqr })
     } catch (err) {
         return res.status(500).json({ message: err.message || "Error al registrar la PQR." })
     }
 }
 
-// POST /api/pqr/:id/bitacora — Agrega una entrada de gestión a la bitácora
+// POST /api/pqr/:id/bitacora — Agrega una entrada de gestión a la bitácora (con archivos opcionales)
 export const addBitacora = async (req, res) => {
     try {
         const { id } = req.params
@@ -101,6 +108,11 @@ export const addBitacora = async (req, res) => {
         }
 
         const entrada = await addBitacoraEntry(id, id_usuario, id_tipo_evento, descripcion)
+
+        if (req.files && req.files.length > 0) {
+            await addBitacoraArchivos(entrada.id_bitacora, req.files)
+        }
+
         return res.status(201).json(entrada)
     } catch (err) {
         return res.status(500).json({ message: err.message || "Error al agregar entrada a bitácora" })
